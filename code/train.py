@@ -9,7 +9,7 @@ class Trainer:
         self.noise_amp = 0.1
         self.epoch_num = 4
         self.num_scales = 8
-        self.num_iters = 1
+        self.num_iters = 2000
         self.reconstruction_weight = 10
         self.num_filters = [pow(2, (s//4)) * 32 for s in range(self.num_scales)] # num_filters double for every 4 scales
         self.checkpoint_dir = "./training_checkpoints"

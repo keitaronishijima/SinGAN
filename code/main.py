@@ -8,8 +8,8 @@ from inference import Inferencer
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('command',help="'train' or 'generate'")
-    parser.add_argument('--image', help='Name of input image', required=True)
+    parser.add_argument('command',help="'train' or 'inference'")
+    parser.add_argument('--image', help='Name of input', required=True)
     args = parser.parse_args()
     
     if args.command == 'train':
@@ -20,8 +20,7 @@ def main():
     elif args.command == 'generate':
         assert os.path.exists(args.image), 'Reference image not found !'
         inferencer = Inferencer()
-        inferencer.inference(mode="random_sample",reference_image=args.image)
-
+        inferencer.inference(rimg=args.image)
     else:
         print('Your arguments are not correct. Try somethign like "python main.py train --image ../seki.jpg"')
         
