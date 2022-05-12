@@ -126,10 +126,8 @@ class Trainer:
             new_w = np.maximum(min_size, 
                                 tf.cast(image.shape[2]*scale_factor, tf.int32))
 
-        image = tf.image.resize(
-                    image, 
-                    (new_h, new_w),
-                )
+        image = tf.image.resize(image, (new_h, new_w))
+        
         return image
     
     def save_model(self, scale_index):
