@@ -1,4 +1,5 @@
 from doctest import script_from_examples
+from logging.handlers import TimedRotatingFileHandler
 import os
 import numpy as np
 import tensorflow as tf
@@ -12,17 +13,16 @@ class Inferencer:
 
         self.model = []
         self.noise = []
-        self.load_model("../training_checkpoints")
+        self.modelload("../training_checkpoints")
         self.num_samples = 10
         self.inject_scale = 0
         self.result_dir = "../results"
 
 
-    def load_model(self, checkpoint_dir):
-        """ Load generators and NoiseAmp from checkpoint_dir """
+    def modelload(self, checkpoint_dir):
         self.noise = np.load(checkpoint_dir + '/NoiseAmp.npy')
         directory = os.walk(checkpoint_dir)
-        for path, dir_list, _ in dir:
+        for path, dir_list, _ in directory:
             for name in dir_list:
                 network = name[0]                
                 scale = int(name[1])
@@ -32,125 +32,86 @@ class Inferencer:
                     self.model.append(generator)
 
 
-    def inference(self, mode, reference_image, image_size=250):
-        """ Use SinGAN to do inference
-        mode : Inference mode
-        reference_image : Input image name
-        image_size : Size of output image
-        """
-        rimg = self.load_image(reference_image, image_size=image_size) / 127.5 - 1 
+    def inference(self, task, rimg, size=250):
+        rimg = self.imloader(rimg, size=size) / 127.5 - 1 
         reimgs = self.make_pyramid(rimg, len(self.model))
-
-        dir =  "../results"
-        if mode == 'random_sample':
-            z_fixed = tf.random.normal(reimgs[0].shape)
-            for n in range(self.num_samples):
-                fake = self.SinGAN_generate(reimgs, z_fixed, inject_scale=self.inject_scale)
-                self.imsave(fake, dir + f'/random_sample_{n}.jpg') 
-
-        elif (mode == 'harmonization') or (mode == 'editing') or (mode == 'paint2image'):
-            fake = self.SinGAN_inject(reimgs, inject_scale=self.inject_scale)
-            self.imsave(fake, dir + f'/inject_at_{self.inject_scale}.jpg') 
-
+        
+        if (task == 'harmonization') or (task == 'editing') or (task == 'paint2image'):
+            genimg = self.gIn(reimgs, inject_scale=self.inject_scale)
+            self.saveimg(genimg, '../results' + f'/inject_at_{self.inject_scale}.jpg') 
+        elif task == 'random_sample':
+            for i in range(self.num_samples):
+                genimg = self.generate(reimgs, tf.random.normal(reimgs[0].shape), inject_scale=self.inject_scale)
+                self.saveimg(genimg, '../results' + f'/random_sample_number_{i}.jpg') 
         else:
-            print('Inference mode must be: random_sample, harmonization, paint2image, editing')
+            print('Please select task as one of random_sample, harmonization, paint2image or editing')
 
 
-    def SinGAN_inject(self, reals, inject_scale=1):
-        """ Inject reference image on given scale (inject_scale should > 0)"""
-        fake = reals[inject_scale]
-
-        for scale in range(inject_scale, len(reals)):
-            fake = self.imresize(fake, new_shapes=reals[scale].shape)
-            z = tf.random.normal(fake.shape)
-            z = z * self.noise[scale]
-            fake = self.model[scale](fake, z)
-    
-        return fake
+    def gIn(self, rimgs, iscale=1):
+        genimg = rimgs[iscale]
+        tscales = len(rimgs)
+        for scale in range(iscale, tscales):
+            genimg = self.resizeimg(genimg, shapes=rimgs[scale].shape)
+            i = tf.random.normal(genimg.shape) * self.noise[scale]
+            genimg = self.model[scale](genimg, i)
+        return genimg
 
 
     @tf.function
-    def SinGAN_generate(self, reals, z_fixed, inject_scale=0):
-        """ Use fixed noise to generate before start_scale """
-        fake = tf.zeros_like(reals[0])
-    
+    def generate(self, reals, z_fixed, inject_scale=0):
+        genimg = tf.zeros_like(reals[0])
         for scale, generator in enumerate(self.model):
-            fake = self.imresize(fake, new_shapes=reals[scale].shape)
-            
+            genimg = self.resizeimg(fake, shapes=reals[scale].shape)  
             if scale > 0:
-                z_fixed = tf.zeros_like(fake)
-
+                r = tf.zeros_like(genimg)
             if scale < inject_scale:
-                z = z_fixed
+                i = r
             else:
-                z = tf.random.normal(fake.shape)
-            z = z * self.noise[scale]
-            fake = generator(fake, z)
+                i = tf.random.normal(genimg.shape)
+            i = i * self.noise[scale]
+            genimg = generator(genimg, i)
+            print("Scale:")
             print(scale)
 
-        return fake
+        return genimg
 
 
     def make_pyramid(self, timg, scales):
-        """ Create the pyramid of scales """
         pyramid = [timg]
         for scale in range(1, scales):
-            scaledimg = self.imresize(script_from_examples, scale_factor=pow(0.75, scale))
+            scaledimg = self.resizeimg(timg, sfactor=pow(0.75, scale))
             pyramid.append(scaledimg)
-        
-        """ Reverse it to coarse-fine scales """
         pyramid.reverse()
         for img in pyramid:
             print("Image shape")
             print(img.shape)
         return pyramid
     
-    def load_image(self, image, image_size=None):
-        """Load an image from directory into a tensor shape of [1,H,W,C] and value between [0, 255]
-        image : Directory of image
-        image_size : An integer number
-        """
-        image = tf.io.read_file(image)
-        image = tf.image.decode_png(image, channels=3)
-        image = tf.cast(image, tf.float32)
-        # image = tf.image.convert_image_dtype(image, tf.float32)   # to [0, 1]
-
-        if image_size:
-            image = tf.image.resize(image, (image_size, image_size),
-                                    method=tf.image.ResizeMethod.BILINEAR,
-                                    antialias=True,
-                                    preserve_aspect_ratio=True
-                                    )
-        return image[tf.newaxis, ...]
+    def imloader(self, img, size=None):
+        img = tf.cast(tf.image.decode_png(tf.io.read_file(img), channels=3), tf.float32)
     
-    def create_dir(self, dir):
-        if not os.path.exists(dir):
-            os.makedirs(dir)
-            print(f'Directory {dir} createrd')
+        if size is not None:
+            img = tf.image.resize(img, (size, size),method=tf.image.ResizeMethod.BILINEAR,antialias=True,preserve_aspect_ratio=True)
+        return img[tf.newaxis, ...]
+    
+    def mkdir(self, dir):
+        if os.path.exists(dir):
+            print("This directory already exists")  
         else:
-            print(f'Directory {dir} already exists')  
-
+            os.makedirs(dir)
+            print("Your directory was created")  
         return dir
 
-    def imresize(self, image, min_size=0, scale_factor=None, new_shapes=None):
-        if new_shapes:
-            new_h = new_shapes[1]
-            new_w = new_shapes[2]
-        if scale_factor is not None:
-            new_h = np.maximum(min_size, 
-                                    tf.cast(image.shape[1]*scale_factor, tf.int32))
-            new_w = np.maximum(min_size, 
-                                tf.cast(image.shape[2]*scale_factor, tf.int32))
-
-        image = tf.image.resize(
-                    image, 
-                    (new_h, new_w),
-                )
-        return image
+    def resizeimg(self, image, msize=0, sfactor=None, nshapes=None):
+        if nshapes:
+            h, w = nshapes[1],nshapes[2]
+        if sfactor is not None:
+            h = np.maximum(msize, tf.cast(image.shape[1]*sfactor, tf.int32))
+            w = np.maximum(msize, tf.cast(image.shape[2]*sfactor, tf.int32))
+        nimg = tf.image.resize(image, (h, w),)
+        return nimg
 
 
-    def imsave(self, image, path_to_image):
-        """ Expected input values [-1, 1] """
-        image = (image + 1) * 127.5
-        image = Image.fromarray(np.array(image).astype(np.uint8).squeeze())
-        image.save(path_to_image)
+    def saveimg(self, img, path):
+        img = Image.fromarray(np.array((img + 1) * 127.5).astype(np.uint8).squeeze())
+        img.save(path)

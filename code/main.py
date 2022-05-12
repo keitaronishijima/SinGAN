@@ -20,7 +20,7 @@ def main():
     elif args.command == 'generate':
         assert os.path.exists(args.image), 'Reference image not found !'
         inferencer = Inferencer()
-        inferencer.inference(mode="random_sample",reference_image=args.image)
+        inferencer.inference(task="random_sample",rimg=args.image)
 
     else:
         print('Your arguments are not correct. Try somethign like "python main.py train --image ../seki.jpg"')
