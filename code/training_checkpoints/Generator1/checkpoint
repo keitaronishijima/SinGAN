@@ -1,0 +1,2 @@
+model_checkpoint_path: "Generator"
+all_model_checkpoint_paths: "Generator"
