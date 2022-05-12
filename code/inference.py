@@ -42,7 +42,7 @@ class Inferencer:
         reference_image = reference_image / 127.5 - 1 
         reals = self.create_real_pyramid(reference_image, num_scales=len(self.model))
 
-        dir = self.create_dir(os.path.join(self.result_dir, mode))
+        dir =  "../results"
         if mode == 'random_sample':
             z_fixed = tf.random.normal(reals[0].shape)
             for n in range(self.num_samples):
@@ -132,22 +132,18 @@ class Inferencer:
         return dir
 
     def imresize(self, image, min_size=0, scale_factor=None, new_shapes=None):
-        """ Expect input shapes [B, H, W, C] """
         if new_shapes:
-            new_height = new_shapes[1]
-            new_width = new_shapes[2]
-
-        elif scale_factor:
-            new_height = tf.maximum(min_size, 
+            new_h = new_shapes[1]
+            new_w = new_shapes[2]
+        if scale_factor is not None:
+            new_h = np.maximum(min_size, 
                                     tf.cast(image.shape[1]*scale_factor, tf.int32))
-            new_width = tf.maximum(min_size, 
+            new_w = np.maximum(min_size, 
                                 tf.cast(image.shape[2]*scale_factor, tf.int32))
 
         image = tf.image.resize(
                     image, 
-                    (new_height, new_width),
-                    method=tf.image.ResizeMethod.BILINEAR,
-                    antialias=True
+                    (new_h, new_w),
                 )
         return image
 
