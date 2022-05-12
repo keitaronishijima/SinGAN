@@ -1,3 +1,4 @@
+from doctest import script_from_examples
 import os
 import numpy as np
 import tensorflow as tf
@@ -20,14 +21,14 @@ class Inferencer:
     def load_model(self, checkpoint_dir):
         """ Load generators and NoiseAmp from checkpoint_dir """
         self.noise = np.load(checkpoint_dir + '/NoiseAmp.npy')
-        dir = os.walk(checkpoint_dir)
+        directory = os.walk(checkpoint_dir)
         for path, dir_list, _ in dir:
-            for dir_name in dir_list:
-                network = dir_name[0]                
-                scale = int(dir_name[1])
+            for name in dir_list:
+                network = name[0]                
+                scale = int(name[1])
                 if network == 'G':
                     generator = Generator(num_filters=32*pow(2, (scale//4)))
-                    generator.load_weights(os.path.join(path, dir_name) + '/G').expect_partial()    # Silence the warning
+                    generator.load_weights(os.path.join(path, name) + '/G').expect_partial() 
                     self.model.append(generator)
 
 
@@ -37,20 +38,18 @@ class Inferencer:
         reference_image : Input image name
         image_size : Size of output image
         """
-        reference_image = self.load_image(reference_image, image_size=image_size)
-        # Normalize image between -1 to 1
-        reference_image = reference_image / 127.5 - 1 
-        reals = self.create_real_pyramid(reference_image, num_scales=len(self.model))
+        rimg = self.load_image(reference_image, image_size=image_size) / 127.5 - 1 
+        reimgs = self.make_pyramid(rimg, len(self.model))
 
         dir =  "../results"
         if mode == 'random_sample':
-            z_fixed = tf.random.normal(reals[0].shape)
+            z_fixed = tf.random.normal(reimgs[0].shape)
             for n in range(self.num_samples):
-                fake = self.SinGAN_generate(reals, z_fixed, inject_scale=self.inject_scale)
+                fake = self.SinGAN_generate(reimgs, z_fixed, inject_scale=self.inject_scale)
                 self.imsave(fake, dir + f'/random_sample_{n}.jpg') 
 
         elif (mode == 'harmonization') or (mode == 'editing') or (mode == 'paint2image'):
-            fake = self.SinGAN_inject(reals, inject_scale=self.inject_scale)
+            fake = self.SinGAN_inject(reimgs, inject_scale=self.inject_scale)
             self.imsave(fake, dir + f'/inject_at_{self.inject_scale}.jpg') 
 
         else:
@@ -92,17 +91,19 @@ class Inferencer:
         return fake
 
 
-    def create_real_pyramid(self, real_image, num_scales):
+    def make_pyramid(self, timg, scales):
         """ Create the pyramid of scales """
-        reals = [real_image]
-        for i in range(1, num_scales):
-            reals.append(self.imresize(real_image, scale_factor=pow(0.75, i)))
+        pyramid = [timg]
+        for scale in range(1, scales):
+            scaledimg = self.imresize(script_from_examples, scale_factor=pow(0.75, scale))
+            pyramid.append(scaledimg)
         
         """ Reverse it to coarse-fine scales """
-        reals.reverse()
-        for real in reals:
-            print(real.shape)
-        return reals
+        pyramid.reverse()
+        for img in pyramid:
+            print("Image shape")
+            print(img.shape)
+        return pyramid
     
     def load_image(self, image, image_size=None):
         """Load an image from directory into a tensor shape of [1,H,W,C] and value between [0, 255]
