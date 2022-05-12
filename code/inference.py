@@ -10,7 +10,7 @@ class Inferencer:
     def __init__(self):
 
         self.model = []
-        self.NoiseAmp = []
+        self.noise = []
         self.load_model("../training_checkpoints")
         self.num_samples = 10
         self.inject_scale = 0
@@ -19,7 +19,7 @@ class Inferencer:
 
     def load_model(self, checkpoint_dir):
         """ Load generators and NoiseAmp from checkpoint_dir """
-        self.NoiseAmp = np.load(checkpoint_dir + '/NoiseAmp.npy')
+        self.noise = np.load(checkpoint_dir + '/NoiseAmp.npy')
         dir = os.walk(checkpoint_dir)
         for path, dir_list, _ in dir:
             for dir_name in dir_list:
@@ -64,7 +64,7 @@ class Inferencer:
         for scale in range(inject_scale, len(reals)):
             fake = self.imresize(fake, new_shapes=reals[scale].shape)
             z = tf.random.normal(fake.shape)
-            z = z * self.NoiseAmp[scale]
+            z = z * self.noise[scale]
             fake = self.model[scale](fake, z)
     
         return fake
@@ -85,7 +85,7 @@ class Inferencer:
                 z = z_fixed
             else:
                 z = tf.random.normal(fake.shape)
-            z = z * self.NoiseAmp[scale]
+            z = z * self.noise[scale]
             fake = generator(fake, z)
             print(scale)
 

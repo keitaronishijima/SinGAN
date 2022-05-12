@@ -1,9 +1,9 @@
-import os
-import time
 import numpy as np
-import tensorflow as tf
+import os
 from PIL import Image
 from model import Generator, Discriminator
+import time
+import tensorflow as tf
 
 class Trainer:
     def __init__(self):
@@ -14,10 +14,11 @@ class Trainer:
         self.max_size = 1000
         self.min_size = 25
         self.noise_amp = 0.1
+        self.epoch_num = 6
 
         self.checkpoint_dir = "./training_checkpoints"
-        self.G_dir = self.checkpoint_dir + '/G'
-        self.D_dir = self.checkpoint_dir + '/D'
+        self.G_dir = './training_checkpoints/G'
+        self.D_dir = './training_checkpoints/D'
         self.learning_rate = 5e-4
         self.generator_optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate, beta_1=0.5, beta_2=0.999)
         self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate, beta_1=0.5, beta_2=0.999)
@@ -26,8 +27,6 @@ class Trainer:
         self.rec_metric = tf.keras.metrics.Mean()
         self.Z_fixed = []
         self.noise = []
-
-        self.create_directory(self.checkpoint_dir)
         self.generators = []
         self.discriminators = []
         for scale in range(self.num_scales):
@@ -35,17 +34,15 @@ class Trainer:
             self.discriminators.append(Discriminator(num_filters=self.num_filters[scale]))
 
 
-    def save_model(self, scale):
+    def save_model(self, scale_index):
         """ Save weights and NoiseAmp """
-        G_dir = self.G_dir + f'{scale}'
-        D_dir = self.D_dir + f'{scale}'
-        if os.path.exists(G_dir) is None:
-            os.makedirs(G_dir)
-        if os.path.exists(D_dir) is None:
-            os.makedirs(D_dir)
+        G_dir = self.G_dir + f'{scale_index}'
+        D_dir = self.D_dir + f'{scale_index}'
 
-        self.generators[scale].save_weights(G_dir + '/G', save_format='tf')
-        self.discriminators[scale].save_weights(D_dir + '/D', save_format='tf')
+        self.generators[scale_index].save_weights(G_dir + '/G', save_format='tf')
+        self.discriminators[scale_index].save_weights(D_dir + '/D', save_format='tf')
+        
+        # Saving noise array in a file
         np.save(self.checkpoint_dir + '/NoiseAmp', self.noise)
 
 
@@ -53,7 +50,7 @@ class Trainer:
         """ Training """
         # load image first
         input_image = self.load_image(training_image, image_size=self.max_size)
-        # Normalize image below
+        # Normalize image
         input_image = input_image / 127.5 - 1 
         
         # This is to build a pyramid of input images in different sizes
@@ -63,14 +60,14 @@ class Trainer:
         real_input_images.reverse()
         # finish building pyramids
 
-        for scale in range(self.num_scales):
-            print(scale)
-            prev_image = tf.zeros_like(real_input_images[scale])
+        for scale_idx in range(self.num_scales):
+            print(scale_idx)
+            prev_image = tf.zeros_like(real_input_images[scale_idx])
             train_step = self.wrapper_func()
             for step in range(self.num_iters):
-                z_fixed, prev_image, self.noise_amp = train_step(real_input_images, prev_image, self.noise_amp, scale, step)
+                z_fixed, prev_image, self.noise_amp = train_step(real_input_images, prev_image, self.noise_amp, scale_idx, step)
             self.noise.append(self.noise_amp)
-            self.save_model(scale)
+            self.save_model(scale_idx)
             self.Z_fixed.append(z_fixed)
 
     def wrapper_func(self):
@@ -79,25 +76,16 @@ class Trainer:
             real_input = real_input_images[scale]
             z_rand = tf.random.normal(real_input.shape)
 
-            if scale == 0:
-                z_rec = tf.random.normal(real_input.shape)
-            else:
-                z_rec = tf.zeros_like(real_input)
+            z_rec = tf.zeros_like(real_input)
 
-            for i in range(6):
+            for i in range(self.epoch_num):
                 if i == 0 and tf.equal(step, 0):
-                    if scale == 0:
-                        """ Coarsest scale is purely generative """
-                        prev_noise = tf.zeros_like(real_input)
-                        prev_image = tf.zeros_like(real_input)
-                        noise_amp = 1.0
-                    else:
-                        """ Finer scale takes noise and image generated from previous scale as input """
-                        prev_noise = self.generate_from_coarsest(scale, real_input_images, 'rand')
-                        prev_image = self.generate_from_coarsest(scale, real_input_images, 'rec')
-                        """ Compute the standard deviation of noise """
-                        stand_dev = tf.sqrt(tf.reduce_mean(tf.square(real_input - prev_image)))
-                        noise_amp = self.noise_amp * stand_dev
+                    """ Finer scale takes noise and image generated from previous scale as input """
+                    prev_noise = self.generate_from_coarsest(scale, real_input_images, 'rand')
+                    prev_image = self.generate_from_coarsest(scale, real_input_images, 'rec')
+                    """ Compute the standard deviation of noise """
+                    stand_dev = tf.sqrt(tf.reduce_mean(tf.square(real_input - prev_image)))
+                    noise_amp = self.noise_amp * stand_dev
                 else:
                     prev_noise = self.generate_from_coarsest(scale, real_input_images, 'rand')
 
@@ -189,14 +177,9 @@ class Trainer:
     # Util functions below
             
     def load_image(self, image, image_size):
-        """Load an image from directory into a tensor shape of [1,H,W,C] and value between [0, 255]
-        image : Directory of image
-        image_size : An integer number
-        """
         image = tf.io.read_file(image)
         image = tf.image.decode_png(image, channels=3)
         image = tf.cast(image, tf.float32)
-        # image = tf.image.convert_image_dtype(image, tf.float32)   # to [0, 1]
 
         if image_size:
             image = tf.image.resize(image, (image_size, image_size),
@@ -205,33 +188,20 @@ class Trainer:
                                     preserve_aspect_ratio=True
                                     )
         return image[tf.newaxis, ...]
-    
-    def create_directory(self, dir):
-        if not os.path.exists(dir):
-            os.makedirs(dir)
-            print(f'Directory {dir} createrd')
-        else:
-            print(f'Directory {dir} already exists')  
-
-        return dir
 
     def imresize(self, image, min_size=0, scale_factor=None, new_shapes=None):
-        """ Expect input shapes [B, H, W, C] """
         if new_shapes:
-            new_height = new_shapes[1]
-            new_width = new_shapes[2]
-
-        elif scale_factor:
-            new_height = tf.maximum(min_size, 
+            new_h = new_shapes[1]
+            new_w = new_shapes[2]
+        if scale_factor is not None:
+            new_h = np.maximum(min_size, 
                                     tf.cast(image.shape[1]*scale_factor, tf.int32))
-            new_width = tf.maximum(min_size, 
+            new_w = np.maximum(min_size, 
                                 tf.cast(image.shape[2]*scale_factor, tf.int32))
 
         image = tf.image.resize(
                     image, 
-                    (new_height, new_width),
-                    method=tf.image.ResizeMethod.BILINEAR,
-                    antialias=True
+                    (new_h, new_w),
                 )
         return image
 

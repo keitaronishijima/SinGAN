@@ -6,7 +6,7 @@ from tensorflow.keras.layers import Add, Lambda, ZeroPadding2D
 from ConvBlock import ConvBlock
 
 class Generator(Model):
-    def __init__(self, num_filters, name='Generator'):
+    def __init__(self, num_filters):
         super(Generator, self).__init__()
         self.initializer = tf.random_normal_initializer(0., 0.02)
         self.padding = ZeroPadding2D(5)
@@ -24,19 +24,19 @@ class Generator(Model):
     def call(self, prev, noise):
         prev_pad = self.padding(prev)
         noise_pad = self.padding(noise)
-        x = Add()([prev_pad, noise_pad])
-        x = self.head(x)
-        x = self.convblock1(x)
-        x = self.convblock2(x)
-        x = self.convblock3(x)
-        x = self.tail(x)
-        x = Add()([x, prev])
+        out = Add()([prev_pad, noise_pad])
+        out = self.head(out)
+        out = self.convblock1(out)
+        out = self.convblock2(out)
+        out = self.convblock3(out)
+        out = self.tail(out)
+        out = Add()([out, prev])
 
-        return x
+        return out
 
 
 class Discriminator(Model):
-    def __init__(self, num_filters, name='Discriminator'):
+    def __init__(self, num_filters):
         super(Discriminator, self).__init__()
         self.initializer = tf.random_normal_initializer(0., 0.02)
         self.head = ConvBlock(num_filters)
@@ -49,11 +49,11 @@ class Discriminator(Model):
                            padding='valid',
                            kernel_initializer=self.initializer)
 
-    def call(self, x):
-        x = self.head(x)
-        x = self.convblock1(x)
-        x = self.convblock2(x)
-        x = self.convblock3(x)
-        x = self.tail(x)
+    def call(self, out):
+        out = self.head(out)
+        out = self.convblock1(out)
+        out = self.convblock2(out)
+        out = self.convblock3(out)
+        out = self.tail(out)
 
-        return x
+        return out
