@@ -51,7 +51,7 @@ class Inferencer:
         genimg = rimgs[iscale]
         tscales = len(rimgs)
         for scale in range(iscale, tscales):
-            genimg = self.resizeimg(genimg, shapes=rimgs[scale].shape)
+            genimg = self.resizeimg(genimg, nshapes=rimgs[scale].shape)
             i = tf.random.normal(genimg.shape) * self.noise[scale]
             genimg = self.model[scale](genimg, i)
         return genimg
@@ -61,7 +61,7 @@ class Inferencer:
     def generate(self, reals, z_fixed, inject_scale=0):
         genimg = tf.zeros_like(reals[0])
         for scale, generator in enumerate(self.model):
-            genimg = self.resizeimg(fake, shapes=reals[scale].shape)  
+            genimg = self.resizeimg(genimg, nshapes=reals[scale].shape)  
             if scale > 0:
                 r = tf.zeros_like(genimg)
             if scale < inject_scale:
